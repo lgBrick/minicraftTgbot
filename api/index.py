@@ -15,7 +15,7 @@ bot = telebot.TeleBot(TG_TOKEN, threaded=False)
 bot_info = bot.get_me()
 BOT_USERNAME = f"@{bot_info.username}"
 
-# НАСТРОЙКА Gemini: используем правильный класс и умный алиас gemini-flash-latest
+# НАСТРОЙКА Gemini: используем тот идентификатор, который ты прописал
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-3.5-flash')
 
@@ -44,9 +44,8 @@ def is_real_reply(message):
 def process_and_send(message, prompt):
     """
     Отправляет мгновенную текстовую заглушку, запрашивает ответ у Gemini
-    и затем редактирует заглушку на готовый текст.
+    и затем редактирует заглушку на готовый текст с указанием РЕАЛЬНОЙ версии модели.
     """
-    # Список пацанских заглушек, выбирается рандомно, чтобы не приедалось
     thinking_phrases = [
         "⏳ Ща, погодь, соображаю...",
         "⏳ Так, бля, ща раскидаю, сек...",
@@ -65,11 +64,21 @@ def process_and_send(message, prompt):
         # Генерируем весь текст целиком
         response = model.generate_content(prompt)
 
+        # Вытаскиваем точную системную версию модели из ответа Google API
+        try:
+            real_model_name = response.candidates[0].content.model_version
+        except Exception:
+            # Если в ответе нет явной версии, берем имя модели, к которой обращался скрипт
+            real_model_name = getattr(model, '_model_name', 'Неизвестно')
+
+        # Формируем финальный текст ответа + системную плашку версии
+        final_text = f"{response.text}\n\n🤖 [Движок: {real_model_name}]" if response.text else "Бля, чё-то я завис. 🤷‍♂️"
+
         # Меняем текст заглушки на финальный ответ от ИИ
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=sent_msg.message_id,
-            text=response.text if response.text else "Бля, чё-то я завис и ничего не придумал. Напиши еще раз. 🤷‍♂️"
+            text=final_text
         )
     except Exception as e:
         bot.edit_message_text(
