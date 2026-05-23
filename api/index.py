@@ -15,7 +15,7 @@ BOT_USERNAME = f"@{bot_info.username}"
 
 # НАСТРОЙКА ИИ: Используем ПРАВИЛЬНЫЙ класс GenerativeModel
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-flash-latest')
 
 
 def get_clean_question(message):
