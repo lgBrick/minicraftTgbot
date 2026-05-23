@@ -53,7 +53,7 @@ def stream_response_to_telegram(message, prompt):
 
     try:
         # Запрашиваем потоковую генерацию у Gemini
-        response_stream = model.generate_content_stream(prompt)
+        response_stream = model.generate_content(prompt, stream=True)
 
         for chunk in response_stream:
             if chunk.text:
