@@ -1,17 +1,18 @@
 import os
 import json
 import telebot
-from google import genai
+import google.generativeai as genai
 from flask import Flask, request
 
-# Инициализируем токены из переменных окружения Vercel
+# Инициализируем токены
 TG_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 bot = telebot.TeleBot(TG_TOKEN, threaded=False)
 
-# Подключаемся к Google НАПРЯМУЮ, без прокси!
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+# Настраиваем Gemini через классическую легкую библиотеку
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.Model(model_name='models/gemini-1.5-flash')
 
 
 def get_clean_question(message):
@@ -55,10 +56,7 @@ def handle_guide_reply(message):
     """
 
     try:
-        response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
+        response = model.generate_content(prompt)
         bot.reply_to(message, response.text)
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка ИИ (Режим гайда): {e}")
@@ -81,23 +79,20 @@ def handle_free_chat(message):
         return
 
     prompt = f"""
-    Ты — дружелюбный ИИ-помощник в Telegram-группе. Ответь на вопрос пользователя кратко и по делу.
+    Ты — дружелюбный ИИ-помощник в Telegram-канале. Ответь на вопрос пользователя кратко и по делу.
 
     ВОПРОС ПОЛЬЗОВАТЕЛЯ:
     {user_question}
     """
 
     try:
-        response = ai_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
+        response = model.generate_content(prompt)
         bot.reply_to(message, response.text)
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка ИИ (Свободный режим): {e}")
 
 
-# Окружение Flask для обработки Webhook-запросов от Vercel
+# Окружение Flask для Vercel
 app = Flask(__name__)
 
 
