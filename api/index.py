@@ -1,5 +1,4 @@
 import os
-import time
 import telebot
 import google.generativeai as genai
 from flask import Flask, request
@@ -11,11 +10,11 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Инициализируем бота строго с параметром threaded=False для Serverless
 bot = telebot.TeleBot(TG_TOKEN, threaded=False)
 
-# УСКОРЕНИЕ: Кешируем юзернейм бота
+# УСКОРЕНИЕ: Кешируем юзернейм бота, чтобы не делать лишних запросов
 bot_info = bot.get_me()
 BOT_USERNAME = f"@{bot_info.username}"
 
-# НАСТРОЙКА Gemini: используем авто-выбор модели
+# НАСТРОЙКА Gemini: используем правильный класс и умный алиас gemini-flash-latest
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-flash-latest')
 
@@ -41,52 +40,6 @@ def is_real_reply(message):
     return True
 
 
-def stream_response_to_telegram(message, prompt):
-    """
-    Универсальная функция для реального стриминга ответа в Telegram.
-    Собирает слова кусками и с микро-задержкой выводит их в чат.
-    """
-    sent_msg = bot.reply_to(message, "⏳ Ща, погодь, соображаю...")
-
-    current_text = ""
-    last_sent_text = ""
-
-    try:
-        response_stream = model.generate_content(prompt, stream=True)
-
-        for chunk in response_stream:
-            if chunk.text:
-                words = chunk.text.split()
-                for word in words:
-                    current_text += " " + word
-
-                    # Каждые ~15 символов обновляем сообщение на экране
-                    if len(current_text) - len(last_sent_text) > 15:
-                        try:
-                            bot.edit_message_text(
-                                chat_id=message.chat.id,
-                                message_id=sent_msg.message_id,
-                                text=current_text.strip() + " ✍️..."
-                            )
-                            last_sent_text = current_text
-                            time.sleep(0.3)  # Создаем эффект постепенной печати
-                        except Exception:
-                            pass
-
-        bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=sent_msg.message_id,
-            text=current_text.strip() if current_text.strip() else "Бля, чё-то пошло не так, Gemini промолчал. 🤷‍♂️"
-        )
-
-    except Exception as e:
-        bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=sent_msg.message_id,
-            text=f"❌ Ошибка при стриминге: {e}"
-        )
-
-
 # === РЕЖИМ 1: Ответ на реплай (Гайд ИЛИ Контекст диалога) ===
 @bot.message_handler(
     func=lambda message: (
@@ -96,6 +49,8 @@ def stream_response_to_telegram(message, prompt):
 )
 def handle_guide_reply(message):
     user_question = get_clean_question(message)
+
+    # Включаем нативный статус "печатает..." вверху чата без отправки сообщений-заглушек
     bot.send_chat_action(message.chat.id, 'typing')
 
     original_msg = message.reply_to_message
@@ -105,6 +60,7 @@ def handle_guide_reply(message):
         bot.reply_to(message, "⚠️ Чтобы я мог ответить, в исходном сообщении должен быть текст или описание!")
         return
 
+    # УМНЫЙ ПРОМПТ ДРУЖБАНА: Без унылых шаблонов, отвечает по ситуации
     prompt = f"""
     Ты — умный ИИ-помощник в Telegram-группе, но общаешься как свой в доску братан.
     Пользователь прислал сообщение в ответ на другое сообщение (реплай).
@@ -119,11 +75,15 @@ def handle_guide_reply(message):
     1. Изучи Исходное сообщение. Если в нём есть ответ на вопрос пользователя (например, это гайд или инструкция) — используй эту информацию, чтобы дать точный ответ.
     2. Если в Исходном сообщении ответа нет или это просто обычная переписка — НЕ ИСПОЛЬЗУЙ никаких шаблонных фраз о том, что информации нет. Просто ответь на вопрос пользователя, опираясь на свои знания, используя исходное сообщение лишь как контекст диалога.
     3. Веди диалог живо, естественно и максимально неформально. Разрешается дружеский стёб, сленг, подколы и умеренный мат (но без реальной токсичности и агрессии).
-    4. КРИТИЧЕСКИ ВАЖНО: Отвечай максимально емко и коротко, буквально в 1-3 предложениях! Никаких длинных мемуаров, иначе сервер прервет соединение.
-    5. Никогда не используй фразы вроде "Я искусственный интеллект". Сразу переходи к делу.
+    4. Главная цель — всегда давать чёткий, правильный и полезный ответ на вопрос пользователя.
+    5. Никогда не используй фразы вроде "Я искусственный интеллект" или "Как языковая модель". Сразу переходи к делу в своем стиле.
     """
 
-    stream_response_to_telegram(message, prompt)
+    try:
+        response = model.generate_content(prompt)
+        bot.reply_to(message, response.text)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка ИИ (Режим реплая): {e}")
 
 
 # === РЕЖИМ 2: Свободное общение (просто тег в чате, БЕЗ реплая) ===
@@ -135,12 +95,15 @@ def handle_guide_reply(message):
 )
 def handle_free_chat(message):
     user_question = get_clean_question(message)
+
+    # Включаем нативный статус "печатает..." вверху чата
     bot.send_chat_action(message.chat.id, 'typing')
 
     if not user_question:
-        bot.reply_to(message, "Здорово, бро! Задай мне вопрос или тегни в ответе на гайд, я раскидаю! 💡")
+        bot.reply_to(message, "Привет! Задай мне вопрос или тегни в ответе на гайд, чтобы я помог разобраться! 💡")
         return
 
+    # ЖИВОЙ ПРОМПТ ДРУЖБАНА: Свободный режим
     prompt = f"""
     Ты — умный ИИ-помощник в Telegram-группе, но общаешься как старый друг и свой в доску братан.
 
@@ -148,14 +111,17 @@ def handle_free_chat(message):
     {user_question}
 
     Твоя задача:
-    1. Дать четкий, правильный и полезный ответ на вопрос. 
-    2. КРИТИЧЕСКИ ВАЖНО: Отвечай максимально коротко и емко, буквально в 1-2 предложениях, без лишней воды. Это нужно для скорости стриминга.
-    3. Веди диалог живо и неформально. Разрешается дружеский стёб, подколы, сарказм и умеренный мат (но не скатывайся в откровенное хамство).
-    4. Разговаривай как обычный человек в чате, используй сленг.
-    5. Никогда не отвечай шаблонами вроде "Чем я могу помочь?". Сразу херачь по делу в своем стиле.
+    1. Дать четкий, правильный и полезный ответ на вопрос.
+    2. Вести диалог живо и неформально. Разрешается дружеский стёб, подколы, сарказм и умеренный мат (но не скатывайся в откровенное хамство или токсичность).
+    3. Разговаривай как обычный человек в чате, используй сленг.
+    4. Никогда не отвечай шаблонами вроде "Чем я могу помочь?" или "Как искусственный интеллект...". Сразу херачь по делу в своем стиле.
     """
 
-    stream_response_to_telegram(message, prompt)
+    try:
+        response = model.generate_content(prompt)
+        bot.reply_to(message, response.text)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка ИИ (Свободный режим): {e}")
 
 
 # Окружение Flask для Vercel
@@ -172,5 +138,6 @@ def webhook():
         except Exception as e:
             print(f"Ошибка вебхука: {e}")
 
+        # Гарантированный возврат 200 OK защищает от зацикливания Telegram
         return 'OK', 200
     return 'Forbidden', 403
