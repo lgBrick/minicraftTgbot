@@ -1,23 +1,21 @@
 import os
-import time
 import telebot
 import google.generativeai as genai
-from flask import Flask, request
 
-# Инициализируем токены из переменных окружения Vercel
+# Достаем токены из системы
 TG_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Инициализируем бота строго с параметром threaded=False для Serverless
-bot = telebot.TeleBot(TG_TOKEN, threaded=False)
+# Инициализируем бота в классическом режиме непрерывного опроса (Long Polling)
+bot = telebot.TeleBot(TG_TOKEN)
 
-# УСКОРЕНИЕ: Кешируем юзернейм бота
-bot_info = bot.get_me()
-BOT_USERNAME = f"@{bot_info.username}"
-
-# НАСТРОЙКА Gemini: используем авто-выбор модели
+# НАСТРОЙКА Gemini: используем самый свежий Flash
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-flash-latest')
+
+# Кешируем юзернейм
+bot_info = bot.get_me()
+BOT_USERNAME = f"@{bot_info.username}"
 
 
 def get_clean_question(message):
@@ -41,49 +39,50 @@ def is_real_reply(message):
     return True
 
 
-def stream_response_to_telegram(message, prompt):
+def true_streaming_to_telegram(message, prompt):
     """
-    Универсальная функция для реального стриминга ответа в Telegram.
-    Собирает слова кусками и с микро-задержкой выводит их в чат.
+    НАСТОЯЩИЙ СТРИМИНГ ДЛЯ ПОСТОЯННОГО СЕРВЕРА.
+    Слова улетают в Телеграм без задержек по мере генерации.
     """
-    sent_msg = bot.reply_to(message, "⏳ Ща, погодь, соображаю...")
+    # Создаем стартовое сообщение-заглушку
+    sent_msg = bot.reply_to(message, "⏳ Ща, погодь...")
 
     current_text = ""
     last_sent_text = ""
 
     try:
+        # Запускаем живой поток от Gemini
         response_stream = model.generate_content(prompt, stream=True)
 
         for chunk in response_stream:
             if chunk.text:
-                words = chunk.text.split()
-                for word in words:
-                    current_text += " " + word
+                current_text += chunk.text
 
-                    # Каждые ~15 символов обновляем сообщение на экране
-                    if len(current_text) - len(last_sent_text) > 15:
-                        try:
-                            bot.edit_message_text(
-                                chat_id=message.chat.id,
-                                message_id=sent_msg.message_id,
-                                text=current_text.strip() + " ✍️..."
-                            )
-                            last_sent_text = current_text
-                            time.sleep(0.3)  # Создаем эффект постепенной печати
-                        except Exception:
-                            pass
+                # Как только текст увеличился хотя бы на 6 символов, сразу обновляем ТГ.
+                # На постоянном сервере это происходит мгновенно.
+                if len(current_text) - len(last_sent_text) > 6:
+                    try:
+                        bot.edit_message_text(
+                            chat_id=message.chat.id,
+                            message_id=sent_msg.message_id,
+                            text=current_text + " ✍️"
+                        )
+                        last_sent_text = current_text
+                    except Exception:
+                        pass
 
+        # Финальный чистый текст
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=sent_msg.message_id,
-            text=current_text.strip() if current_text.strip() else "Бля, чё-то пошло не так, Gemini промолчал. 🤷‍♂️"
+            text=current_text.strip() if current_text.strip() else "Бля, Gemini промолчал чё-то. 🤷‍♂️"
         )
 
     except Exception as e:
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=sent_msg.message_id,
-            text=f"❌ Ошибка при стриминге: {e}"
+            text=f"❌ Ошибка стриминга: {e}"
         )
 
 
@@ -102,7 +101,7 @@ def handle_guide_reply(message):
     guide_text = original_msg.text if original_msg.text else original_msg.caption
 
     if not guide_text:
-        bot.reply_to(message, "⚠️ Чтобы я мог ответить, в исходном сообщении должен быть текст или описание!")
+        bot.reply_to(message, "⚠️ Нет текста в исходном сообщении!")
         return
 
     prompt = f"""
@@ -119,11 +118,11 @@ def handle_guide_reply(message):
     1. Изучи Исходное сообщение. Если в нём есть ответ на вопрос пользователя (например, это гайд или инструкция) — используй эту информацию, чтобы дать точный ответ.
     2. Если в Исходном сообщении ответа нет или это просто обычная переписка — НЕ ИСПОЛЬЗУЙ никаких шаблонных фраз о том, что информации нет. Просто ответь на вопрос пользователя, опираясь на свои знания, используя исходное сообщение лишь как контекст диалога.
     3. Веди диалог живо, естественно и максимально неформально. Разрешается дружеский стёб, сленг, подколы и умеренный мат (но без реальной токсичности и агрессии).
-    4. КРИТИЧЕСКИ ВАЖНО: Отвечай максимально емко и коротко, буквально в 1-3 предложениях! Никаких длинных мемуаров, иначе сервер прервет соединение.
+    4. Отвечай емко, в пределах 1-4 предложений, чтобы стриминг букв на экране выглядел динамично и быстро.
     5. Никогда не используй фразы вроде "Я искусственный интеллект". Сразу переходи к делу.
     """
 
-    stream_response_to_telegram(message, prompt)
+    true_streaming_to_telegram(message, prompt)
 
 
 # === РЕЖИМ 2: Свободное общение (просто тег в чате, БЕЗ реплая) ===
@@ -148,29 +147,16 @@ def handle_free_chat(message):
     {user_question}
 
     Твоя задача:
-    1. Дать четкий, правильный и полезный ответ на вопрос. 
-    2. КРИТИЧЕСКИ ВАЖНО: Отвечай максимально коротко и емко, буквально в 1-2 предложениях, без лишней воды. Это нужно для скорости стриминга.
-    3. Веди диалог живо и неформально. Разрешается дружеский стёб, подколы, сарказм и умеренный мат (но не скатывайся в откровенное хамство).
-    4. Разговаривай как обычный человек в чате, используй сленг.
-    5. Никогда не отвечай шаблонами вроде "Чем я могу помочь?". Сразу херачь по делу в своем стиле.
+    1. Дать четкий, правильный и полезный ответ на вопрос. Отвечай емко, без лишней воды.
+    2. Вести диалог живо и неформально. Разрешается дружеский стёб, подколы, сарказм и умеренный мат (но не скатывайся в откровенное хамство).
+    3. Разговаривай как обычный человек в чате, используй сленг.
+    4. Никогда не отвечай шаблонами вроде "Чем я могу помочь?". Сразу херачь по делу в своем стиле.
     """
 
-    stream_response_to_telegram(message, prompt)
+    true_streaming_to_telegram(message, prompt)
 
 
-# Окружение Flask для Vercel
-app = Flask(__name__)
-
-
-@app.route('/', methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        try:
-            json_string = request.get_data().decode('utf-8')
-            update = telebot.types.Update.de_json(json_string)
-            bot.process_new_updates([update])
-        except Exception as e:
-            print(f"Ошибка вебхука: {e}")
-
-        return 'OK', 200
-    return 'Forbidden', 403
+# Запуск постоянного прослушивания (Long Polling)
+if __name__ == '__main__':
+    print("Бот успешно запущен в режиме НАСТОЯЩЕГО стриминга...")
+    bot.infinity_polling()
