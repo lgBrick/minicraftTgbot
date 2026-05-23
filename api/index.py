@@ -12,7 +12,9 @@ bot = telebot.TeleBot(TG_TOKEN, threaded=False)
 
 # Настраиваем Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Используем "умный" официальный алиас — он сам автоматически выберет самую актуальную версию Flash
+model = genai.GenerativeModel('gemini-flash-latest')
 
 
 def get_clean_question(message):
@@ -30,7 +32,7 @@ def get_clean_question(message):
         return raw_text.strip()
 
 
-# === РЕЖИМ 1: Ответ строго по гайду (работает ТОЛЬКО когда есть Reply) ===
+# === РЕЖИМ 1: Ответ строго по гайду (работает ТОЛЬКО при наличии Reply) ===
 @bot.message_handler(
     func=lambda message: (
             message.reply_to_message is not None and
@@ -51,7 +53,7 @@ def handle_guide_reply(message):
 
     prompt = f"""
     Ты — полезный ИИ-ассистент. Ответь на вопрос пользователя, используя ИСКЛЮЧИТЕЛЬНО предоставленный текст гайда. 
-    Если в тексте гайда нет ответа на этот вопрос, вежливо ответь, что в данном гайде этой информации нет.
+    Если в тексте гайда нет ответа, вежливо скажи, что в данном гайде этой информации нет.
 
     ТЕКСТ ГАЙДА:
     {guide_text}
@@ -67,7 +69,7 @@ def handle_guide_reply(message):
         bot.reply_to(message, f"❌ Ошибка Gemini API (Режим гайда): {e}")
 
 
-# === РЕЖИМ 2: Свободное общение (работает когда реплая НЕТ, просто тег в чате) ===
+# === РЕЖИМ 2: Свободное общение (Работает, когда реплая НЕТ) ===
 @bot.message_handler(
     func=lambda message: (
             message.reply_to_message is None and
@@ -98,7 +100,7 @@ def handle_free_chat(message):
         bot.reply_to(message, f"❌ Ошибка Gemini API (Свободный режим): {e}")
 
 
-# Окружение Flask для обработки Webhooks на Vercel
+# Окружение Flask для Vercel
 app = Flask(__name__)
 
 
@@ -112,7 +114,7 @@ def webhook():
         except Exception as e:
             print(f"Внутренняя ошибка при обработке апдейта: {e}")
 
-        # Гарантированный возврат 200 OK для предотвращения циклического спама со стороны Telegram
+        # Строго возвращаем 200 OK, чтобы заблокировать любой цикличный спам повторами от Telegram
         return 'OK', 200
 
     return 'Forbidden', 403
