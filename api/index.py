@@ -60,8 +60,6 @@ def process_and_send(message, prompt):
     # Мгновенно отправляем заглушку в чат
     sent_msg = bot.reply_to(message, random.choice(thinking_phrases))
 
-    # Запускаем нативный статус "печатает" для красоты
-    bot.send_chat_action(message.chat.id, 'typing')
 
     try:
         response = model.generate_content(prompt)
