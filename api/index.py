@@ -17,7 +17,7 @@ BOT_USERNAME = f"@{bot_info.username}"
 
 # НАСТРОЙКА Gemini: используем тот идентификатор, который ты прописал
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-5.5-flash')
+model = genai.GenerativeModel('gemini-3.5-flash')
 
 
 def get_clean_question(message):
@@ -69,7 +69,7 @@ def process_and_send(message, prompt):
             real_model_name = response.candidates[0].content.model_version
         except Exception:
             # Если в ответе нет явной версии, берем имя модели, к которой обращался скрипт
-            real_model_name = getattr(model, '_model_name', 'Неизвестно')
+            real_model_name = "я ебланище"
 
         # Формируем финальный текст ответа + системную плашку версии
         final_text = f"{response.text}\n\n🤖 [Движок: {real_model_name}]" if response.text else "Бля, чё-то я завис. 🤷‍♂️"
