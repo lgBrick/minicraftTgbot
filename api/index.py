@@ -67,10 +67,12 @@ def process_and_send(message, prompt):
         # ИСПРАВЛЕНО: Теперь отправляем строго чистый текст ответа
         final_text = response.text if response.text else "Бля, чё-то я завис и ничего не придумал. Напиши еще раз. 🤷‍♂️"
 
+        # Меняем текст заглушки на финальный ответ от ИИ
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=sent_msg.message_id,
-            text=final_text
+            text=final_text,
+            parse_mode='Markdown'
         )
 
     except Exception as e:
