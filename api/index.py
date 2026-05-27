@@ -17,7 +17,7 @@ BOT_USERNAME = f"@{bot_info.username}"
 
 # НАСТРОЙКА Gemini: используем тот идентификатор, который ты прописал
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-3.5-flash')
+model = genai.GenerativeModel('gemini-5.5-flash')
 
 
 def get_clean_question(message):
