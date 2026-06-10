@@ -11,9 +11,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Инициализируем бота строго с параметром threaded=False для Serverless
 bot = telebot.TeleBot(TG_TOKEN, threaded=False)
 
-# УСКОРЕНИЕ: Кешируем юзернейм бота
-bot_info = bot.get_me()
-BOT_USERNAME = f"@{bot_info.username}"
+# УСКОРЕНИЕ: юзернейм бота
+BOT_USERNAME = "@minicraftTg_bot"
 
 # НАСТРОЙКА Gemini: используем тот идентификатор, который ты прописал
 genai.configure(api_key=GEMINI_API_KEY)
