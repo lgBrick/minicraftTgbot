@@ -60,14 +60,10 @@ def process_and_send(message, prompt):
     # Мгновенно отправляем заглушку в чат
     sent_msg = bot.reply_to(message, random.choice(thinking_phrases))
 
-
     try:
         response = model.generate_content(prompt)
-
-        # ИСПРАВЛЕНО: Теперь отправляем строго чистый текст ответа
         final_text = response.text if response.text else "Бля, чё-то я завис и ничего не придумал. Напиши еще раз. 🤷‍♂️"
 
-        # Меняем текст заглушки на финальный ответ от ИИ
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=sent_msg.message_id,
@@ -76,10 +72,24 @@ def process_and_send(message, prompt):
         )
 
     except Exception as e:
+        error_text = str(e)
+
+        # Перехватываем лимиты (429)
+        if "429" in error_text or "Quota" in error_text:
+            reply_text = "⚠️ Бля, Гугл прикрыл лавочку. Я упёрся в лимит запросов. Подожди немного, пусть счетчик обнулится, и попробуй снова."
+
+        # Перехватываем бан ключа (403)
+        elif "403" in error_text or "denied" in error_text:
+            reply_text = "🚫 Пиздец, Гугл заблокировал мой доступ. Админ, иди меняй API-ключ."
+
+        # Заглушка для любых других неизвестных ошибок (обрезаем длинный текст)
+        else:
+            reply_text = f"❌ Какая-то неведомая хуйня сломалась в мозгах: {error_text[:100]}..."
+
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=sent_msg.message_id,
-            text=f"❌ Ошибка ИИ: {e}"
+            text=reply_text
         )
 
 
