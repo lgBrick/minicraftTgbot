@@ -3,6 +3,7 @@ import random
 import telebot
 import google.generativeai as genai
 from flask import Flask, request
+import time
 
 # Инициализируем токены из переменных окружения Vercel
 TG_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -153,6 +154,12 @@ def handle_free_chat(message):
 # Окружение Flask для Vercel
 app = Flask(__name__)
 
+# На самом верху файла, где импорты, добавь:
+# import time
+
+# Хранилище для обработанных сообщений (работает пока жив инстанс Vercel)
+PROCESSED_MESSAGES = {}
+
 
 @app.route('/', methods=['POST'])
 def webhook():
@@ -160,7 +167,31 @@ def webhook():
         try:
             json_string = request.get_data().decode('utf-8')
             update = telebot.types.Update.de_json(json_string)
+
+            # Проверяем, есть ли вообще сообщение в апдейте
+            message = update.message or update.edited_message or (
+                update.callback_query.message if update.callback_query else None)
+
+            if message:
+                msg_key = f"{message.chat.id}:{message.message_id}"
+                current_time = time.time()
+
+                # Если это сообщение мы уже видели в последние 30 секунд — игнорим спам Телеграма
+                if msg_key in PROCESSED_MESSAGES and (current_time - PROCESSED_MESSAGES[msg_key]) < 30:
+                    print(f"🛑 Заблочен дубликат сообщения: {msg_key}")
+                    return 'OK', 200  # Говорим Телеге, что всё ок, чтобы она отстала
+
+                # Запоминаем сообщение
+                PROCESSED_MESSAGES[msg_key] = current_time
+
+                # Очищаем старый кэш, чтобы память не забивать (оставляем последние 50 запросов)
+                if len(PROCESSED_MESSAGES) > 50:
+                    oldest_key = min(PROCESSED_MESSAGES, key=PROCESSED_MESSAGES.get)
+                    PROCESSED_MESSAGES.pop(oldest_key)
+
+            # Передаем апдейт боту на обработку
             bot.process_new_updates([update])
+
         except Exception as e:
             print(f"Ошибка вебхука: {e}")
 
