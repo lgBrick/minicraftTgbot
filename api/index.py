@@ -16,7 +16,7 @@ BOT_USERNAME = "@minicraftTg_bot"
 
 # НАСТРОЙКА Gemini: используем тот идентификатор, который ты прописал
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-flash-latest')
+model = genai.GenerativeModel('gemini-3.5-flash')
 
 
 def get_clean_question(message):
@@ -140,7 +140,6 @@ def handle_free_chat(message):
     {user_question}
 
     Отвечай так:
-    - ЛИМИТ ДЛИНЫ: Строго 1-3 предложения. Если напишешь поэму — сервер упадет.
     - Сразу по делу, без воды и прелюдий.
     - Жёстко, живо, с матом и подколами, где влезет.
     - Разговаривай как обычный мужик в голосовом чате, а не как бот.
